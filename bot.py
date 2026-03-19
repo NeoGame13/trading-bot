@@ -7,49 +7,60 @@ logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
-# Bybit testnet session
 session = HTTP(
     testnet=True,
     api_key=os.getenv("BYBIT_API_KEY"),
     api_secret=os.getenv("BYBIT_API_SECRET"),
 )
 
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
     return "bot is live", 200
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data = request.get_json(force=True, silent=False)
+        data = request.get_json()
         logging.info(f"Received signal: {data}")
 
-        if not data:
-            return jsonify({"ok": False, "error": "Empty JSON"}), 400
-
-        signal = str(data.get("signal", "")).lower().strip()
-        symbol = str(data.get("symbol", "BTCUSDT")).upper().strip()
-
-        if signal not in ["buy", "sell"]:
-            return jsonify({"ok": False, "error": "signal must be buy or sell"}), 400
+        signal = data.get("signal")
+        symbol = data.get("symbol", "BTCUSDT")
 
         side = "Buy" if signal == "buy" else "Sell"
 
-        # Bybit V5 place order
+        # 🔥 ставимо плече
+        try:
+            session.set_leverage(
+                category="linear",
+                symbol=symbol,
+                buyLeverage="10",
+                sellLeverage="10"
+            )
+        except:
+            pass
+
+        # 🔥 дуже маленький обʼєм щоб точно пройшло
+        qty = "0.00005"
+
         order = session.place_order(
             category="linear",
             symbol=symbol,
             side=side,
             orderType="Market",
-            qty="0.001"
+            qty=qty,
+            takeProfit="70000",   # зміню потім під тебе
+            stopLoss="60000"
         )
 
         logging.info(f"Order placed: {order}")
-        return jsonify({"ok": True, "order": order}), 200
+
+        return jsonify({"ok": True, "order": order})
 
     except Exception as e:
         logging.error(f"Error: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
