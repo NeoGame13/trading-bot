@@ -20,24 +20,15 @@ def home():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data = request.get_json(force=True, silent=False)
+        data = request.get_json(force=True)
         logging.info(f"Received signal: {data}")
 
-        if not data:
-            return jsonify({"ok": False, "error": "Empty JSON"}), 400
-
-        signal = str(data.get("signal", "")).lower().strip()
-        symbol = str(data.get("symbol", "XRPUSDT")).upper().strip()
-
-        if signal not in ["buy", "sell"]:
-            return jsonify({"ok": False, "error": "signal must be buy or sell"}), 400
+        signal = data.get("signal")
+        symbol = data.get("symbol", "XRPUSDT")
 
         side = "Buy" if signal == "buy" else "Sell"
 
-        # Для тесту ставимо безпечний обсяг для дешевого контракту
-        qty = "10"
-
-        # Спроба виставити плече
+        # ставимо плече
         try:
             session.set_leverage(
                 category="linear",
@@ -45,36 +36,27 @@ def webhook():
                 buyLeverage="5",
                 sellLeverage="5"
             )
-            logging.info(f"Leverage set for {symbol}")
-        except Exception as e:
-            logging.info(f"Leverage not changed or already set: {e}")
+        except:
+            pass
 
-        # Умовні TP/SL для XRPUSDT
-        # Для buy: TP вище, SL нижче
-        # Для sell: TP нижче, SL вище
-        if side == "Buy":
-            take_profit = "1.0"
-            stop_loss = "0.1"
-        else:
-            take_profit = "0.1"
-            stop_loss = "1.0"
+        # мінімальний робочий обʼєм
+        qty = "10"
 
         order = session.place_order(
             category="linear",
             symbol=symbol,
             side=side,
             orderType="Market",
-            qty=qty,
-            takeProfit=take_profit,
-            stopLoss=stop_loss
+            qty=qty
         )
 
         logging.info(f"Order placed: {order}")
-        return jsonify({"ok": True, "order": order}), 200
+
+        return jsonify({"ok": True, "order": order})
 
     except Exception as e:
         logging.error(f"Error: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
