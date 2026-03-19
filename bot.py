@@ -13,35 +13,51 @@ session = HTTP(
     api_secret=os.getenv("BYBIT_API_SECRET"),
 )
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def home():
     return "bot is live", 200
-
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data = request.get_json()
+        data = request.get_json(force=True, silent=False)
         logging.info(f"Received signal: {data}")
 
-        signal = data.get("signal")
-        symbol = data.get("symbol", "BTCUSDT")
+        if not data:
+            return jsonify({"ok": False, "error": "Empty JSON"}), 400
+
+        signal = str(data.get("signal", "")).lower().strip()
+        symbol = str(data.get("symbol", "XRPUSDT")).upper().strip()
+
+        if signal not in ["buy", "sell"]:
+            return jsonify({"ok": False, "error": "signal must be buy or sell"}), 400
 
         side = "Buy" if signal == "buy" else "Sell"
 
-        # 🔥 ставимо плече
+        # Для тесту ставимо безпечний обсяг для дешевого контракту
+        qty = "10"
+
+        # Спроба виставити плече
         try:
             session.set_leverage(
                 category="linear",
                 symbol=symbol,
-                buyLeverage="10",
-                sellLeverage="10"
+                buyLeverage="5",
+                sellLeverage="5"
             )
-        except:
-            pass
+            logging.info(f"Leverage set for {symbol}")
+        except Exception as e:
+            logging.info(f"Leverage not changed or already set: {e}")
 
-        # 🔥 дуже маленький обʼєм щоб точно пройшло
-        qty = "0.00005"
+        # Умовні TP/SL для XRPUSDT
+        # Для buy: TP вище, SL нижче
+        # Для sell: TP нижче, SL вище
+        if side == "Buy":
+            take_profit = "1.0"
+            stop_loss = "0.1"
+        else:
+            take_profit = "0.1"
+            stop_loss = "1.0"
 
         order = session.place_order(
             category="linear",
@@ -49,18 +65,16 @@ def webhook():
             side=side,
             orderType="Market",
             qty=qty,
-            takeProfit="70000",   # зміню потім під тебе
-            stopLoss="60000"
+            takeProfit=take_profit,
+            stopLoss=stop_loss
         )
 
         logging.info(f"Order placed: {order}")
-
-        return jsonify({"ok": True, "order": order})
+        return jsonify({"ok": True, "order": order}), 200
 
     except Exception as e:
         logging.error(f"Error: {e}")
-        return jsonify({"error": str(e)}), 500
-
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
